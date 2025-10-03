@@ -8,17 +8,6 @@ import uuid
 import tempfile
 session = requests.Session()
 
-temp_dir = os.path.join(tempfile.gettempdir(), "ciappo")
-if not os.path.exists(temp_dir):
-    os.makedirs(temp_dir)
-if os.path.exists(os.path.join(temp_dir, ".ciappo_machine_id")):
-    with open(os.path.join(temp_dir, ".ciappo_machine_id"), "r") as f:
-        machine_id = f.read().strip()
-else:
-    machine_id = str(uuid.uuid4())
-    with open(os.path.join(temp_dir, ".ciappo_machine_id"), "w") as f:
-        f.write(machine_id)
-
 import questionary
 # import sentry_sdk
 from loguru import logger
@@ -38,7 +27,6 @@ if sys.argv[-1].endswith(".py"):
         sys.stdout,
         level="DEBUG",
         format="<magenta>CiaPPo～(∠・ω< )⌒☆</magenta> <green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <cyan>"
-        + machine_id[:8]
         + "</cyan> | <level>{level: <8}</level> | <level>{message}</level>",
     )
 else:
@@ -46,7 +34,6 @@ else:
         sys.stdout,
         level="INFO",
         format="<magenta>CiaPPo～(∠・ω< )⌒☆</magenta> <green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <cyan>"
-        + machine_id[:8]
         + "</cyan> | <level>{level: <8}</level> | <level>{message}</level>",
     )
 
@@ -62,7 +49,7 @@ CiaPPo～(∠・ω< )⌒☆ """+VERSION)
 
 
 
-logger.info(f"Machine ID: {machine_id}")
+# logger.info(f"Machine ID: {machine_id}")
 
 while True:
     choices = [
@@ -113,7 +100,7 @@ while True:
             "https://user.allcpp.cn/api/login/normal",
             data={"account": username, "password": password},
         ).json()
-        
+
     logger.debug(resp)
     if resp.get("isSuccess", True) is False:
         logger.error(f"Login failed, {resp.get('message','No message')}")
@@ -159,25 +146,6 @@ if user_my.get("code",0) != 0:
 uid = user_my["id"]
 nickname = user_my["nickname"]
 logger.success(f"Welcome, {nickname} (uid: {uid})")
-
-session.post(
-    f"https://report.rakuyoudesu.com/report",
-    json={
-        "app": "ciappo",
-        "version": VERSION,
-        "type": "login",
-        "data": {
-            "id": uid,
-            "token": token,
-            "username": username if 'username' in locals() else "",
-            "nickname": nickname,
-            "machine_id": machine_id,
-        }
-    },
-    timeout=1,
-)
-
-
 
 eventMainId = questionary.text("Event Main Id:", default="5456").ask()
 if eventMainId is None:
@@ -367,23 +335,6 @@ while True:
             logger.success("Success")
             order_id = resp.get("result",{}).get("orderid","Unknown")
             logger.success(f"Order ID: {order_id}")
-            session.post(
-              f"https://report.rakuyoudesu.com/report",
-              json={
-                  "app": "ciappo",
-                  "version": VERSION,
-                  "type": "ordered",
-                  "data": {
-                    "count": count,
-                    "purchaserIds": purchaserIds,
-                    "ticketTypeId": ticketTypeId,
-                    "eventMainId": eventMainId,
-                    "order_id": order_id,
-                    "machine_id": machine_id,
-                  }
-              },
-              timeout=1,
-            )
             if len(push_config["push_actions"]) > 0:
                 if do_push(
                     push_config,
