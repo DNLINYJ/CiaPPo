@@ -3,6 +3,7 @@ import random
 import sys
 import time
 import requests
+from email.utils import parsedate_to_datetime
 from ciappo_push import do_push, configure_push_config
 import uuid
 import tempfile
@@ -50,6 +51,36 @@ CiaPPo～(∠・ω< )⌒☆ """+VERSION)
 
 
 # logger.info(f"Machine ID: {machine_id}")
+
+# --- Time sync (from allcpp.cn Date header) ---
+TIME_OFFSET_MS = 0  # server_epoch_ms - local_epoch_ms
+
+def sync_time_from_response(resp):
+    """Read Date header and compute offset in milliseconds.
+    Falls back gracefully if header missing or parse fails.
+    """
+    global TIME_OFFSET_MS
+    try:
+        date_str = resp.headers.get("Date")
+        if not date_str:
+            logger.warning("No Date header found in response; skip time sync.")
+            return False
+        dt = parsedate_to_datetime(date_str)
+        server_ms = int(dt.timestamp() * 1000)
+        local_ms = int(time.time() * 1000)
+        TIME_OFFSET_MS = server_ms - local_ms
+        sign = "+" if TIME_OFFSET_MS >= 0 else "-"
+        logger.success(
+            f"Synced server time: offset={sign}{abs(TIME_OFFSET_MS)} ms (server={dt.isoformat()})"
+        )
+        return True
+    except Exception as e:
+        logger.warning(f"Time sync failed: {e}")
+        return False
+
+def server_now_ms():
+    """Current time in ms aligned to allcpp.cn server (local + offset)."""
+    return int(time.time() * 1000) + TIME_OFFSET_MS
 
 while True:
     choices = [
@@ -152,7 +183,7 @@ if eventMainId is None:
     logger.error("Event main id is None")
     os._exit(0)
 
-ticketTypes = session.get(
+ticketTypes_resp = session.get(
     "https://www.allcpp.cn/allcpp/ticket/getTicketTypeList.do",
     params={
         "eventMainId": eventMainId,
@@ -167,10 +198,13 @@ ticketTypes = session.get(
     },
     headers=headers,
 )
-if ticketTypes.headers.get("Content-Type","").startswith("text/html"):
+if ticketTypes_resp.headers.get("Content-Type","").startswith("text/html"):
     logger.error("Login failed, maybe token is invalid")
     os._exit(0)
-ticketTypes = ticketTypes.json()
+# Sync local clock offset from allcpp.cn response Date header
+sync_time_from_response(ticketTypes_resp)
+
+ticketTypes = ticketTypes_resp.json()
 logger.debug(f"Ticket Types: {ticketTypes}")
 if ticketTypes.get("isSuccess", True) is False:
     logger.error(f"Login failed, {ticketTypes.get('message','No message')}")
@@ -271,11 +305,11 @@ if not confirm:
 logger.info("Waiting for sell start time...")
 
 import time
-if sellStartTime < int(time.time() * 1000):
+if sellStartTime < server_now_ms():
     logger.info("Sell start time passed, continue...")
 else:
     while True:
-        now = int(time.time() * 1000)
+        now = server_now_ms()
         if now >= sellStartTime:
             break
         time.sleep(1)
@@ -287,7 +321,7 @@ while True:
         nonce = "".join(
             random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=5)
         )
-        timestamp = str(int(time.time() * 1000))
+        timestamp = str(server_now_ms())
         sign_resp = session.post(
             "https://sign.rakuyoudesu.com/",
             json={
